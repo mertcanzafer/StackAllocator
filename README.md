@@ -39,6 +39,9 @@ This is why many games implement custom memory management systems such as:
 These specialized allocators offer **faster**, more **predictable performance** and **reduce memory fragmentation**, making them ideal for real-time applications like games.
 
 ## Stack-Based Allocators:
+![Stack Allocator](https://www.gingerbill.org/images/memory-allocation-strategies/stack_allocator_alloc.svg)
+
+
 - Many games allocate memory in a stack-like fashion. Whenever a new game 
 level is loaded, memory is allocated for it. Once the level has been loaded, 
 little or no dynamic memory allocation takes place. At the conclusion of 
