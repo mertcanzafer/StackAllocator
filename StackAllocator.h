@@ -1,6 +1,7 @@
 #pragma once
 #include "Defines.h"
 #include <cassert>
+#include <exception>
 #include <cstddef>
 #include <cstring>
 
@@ -21,6 +22,14 @@ public:
 	// Constructs a stack allocator with the given total   
 	// size.
 	explicit StackAllocator(u32 StackSizeBytes);
+
+	// Deletes the copy constructor and assignment operator
+	StackAllocator(const StackAllocator&) = delete;
+	StackAllocator& operator=(const StackAllocator&) = delete;
+
+	// Implements the move constructor and assignment operator
+	StackAllocator(StackAllocator&& other)noexcept;
+	StackAllocator& operator=(StackAllocator&& other)noexcept;
 
 	// Allocates a new block of the given size from stack  
 	// top.
@@ -54,7 +63,15 @@ public:
 		// Marker at the time of construction
 		Marker m_Marker;
 	};
+private:
+	// Header for stack allocations, used to store padding
+	struct StackAllocationHeader
+	{
+		u8 padding;
+	};
 
+	// Calculates the padding needed for the given size and alignment
+	u32 CalculatePadding(u32 SizeBytes, u32 Alignment, uintptr_t& currentAddress);
 private:
 	// Pointer to the base of the stack
 	std::byte* m_StackBase;
