@@ -1,46 +1,61 @@
 #include "StackAllocator.h"
-#include <print>  // C++23
+#include <print> 
+#include <string>
 
 int main()
 {
     try {
-        StackAllocator allocator{ 1024 }; // Allocate 1KB stack
+        // Create a stack allocator of 1KB
+        StackAllocator allocator{ 1024 };
 
-        // Allocate 100 bytes aligned to 16 bytes
-        void* ptr1 = allocator.Allocate(100, 16);
-        std::println("Allocated 100 bytes at address: {}", ptr1);
+        // Allocate trivial type (int)
+        int* intArray = AllocateFromStack<int>(5, allocator); // 5 ints
+        for (int i = 0; i < 5; ++i)
+            intArray[i] = i * 10;
 
-        // Get a marker to rollback later
-        StackAllocator::Marker marker = allocator.GetMarker();
-        std::println("Current marker after first allocation: {}", marker);
+        for (int i = 0; i < 5; ++i)
+            std::println("intArray[{}] = {}", i, intArray[i]);
 
-        // Allocate another 200 bytes with default alignment
-        void* ptr2 = allocator.Allocate(200);
-        std::println("Allocated 200 bytes at address: {}", ptr2);
-        std::println("Current marker after second allocation: {}", allocator.GetMarker());
+        // Allocate non-trivial type (std::string)
+        std::string* strArray = AllocateFromStack<std::string>(3, allocator, "Hello");
 
-        // Rollback to the previous marker
+        strArray[1] = "World";
+        strArray[2] = "StackAllocator";
+
+        for (int i = 0; i < 3; ++i)
+            std::println("strArray[{}] = {}", i, strArray[i]);
+
+        // Manually destroy non-trivial objects
+        DestroyObjects(strArray, 3);
+
+        // Demonstrate stack markers
+        auto marker = allocator.GetMarker();
+        std::println("Marker after allocations: {}", marker);
+
+        // Allocate more ints
+        int* extraInts = AllocateFromStack<int>(2, allocator);
+        extraInts[0] = 100;
+        extraInts[1] = 200;
+
+        std::println("Extra ints: {}, {}", extraInts[0], extraInts[1]);
+
+        // Rollback to previous marker
         allocator.FreeToMarker(marker);
         std::println("Rolled back to marker {}, current marker: {}", marker, allocator.GetMarker());
 
-        // Allocate 50 bytes
-        void* ptr3 = allocator.Allocate(50);
-        std::println("Allocated 50 bytes at address: {}", ptr3);
-        std::println("Current marker after third allocation: {}", allocator.GetMarker());
-
-        // Use RAII to automatically roll back
+        // RAII rollback using RewindScope
         {
-            StackAllocator::RewindScope rewindScope(allocator);
-            void* ptr4 = allocator.Allocate(300); // Allocate 300 bytes
-            std::println("Allocated 300 bytes at address: {}", ptr4);
-            std::println("Current marker inside scope: {}", allocator.GetMarker());
+            StackAllocator::RewindScope scope(allocator);
+            auto tempArray = AllocateFromStack<int>(4, allocator);
+            for (int i = 0; i < 4; ++i)
+                tempArray[i] = i + 1;
+            std::println("Marker inside RewindScope: {}", allocator.GetMarker());
         }
-        // After exiting the scope, the stack will be rolled back automatically
-        std::println("Current marker after RewindScope: {}", allocator.GetMarker());
+        std::println("Marker after RewindScope: {}", allocator.GetMarker());
 
-        // Clear the stack allocator
+        // Clear entire stack
         allocator.Clear();
-        std::println("Stack cleared, current marker: {}", allocator.GetMarker());
+        std::println("Marker after Clear: {}", allocator.GetMarker());
     }
     catch (const std::exception& e) {
         std::println("Exception: {}", e.what());

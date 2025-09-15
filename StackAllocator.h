@@ -4,79 +4,124 @@
 #include <exception>
 #include <cstddef>
 #include <cstring>
+#include <type_traits>
 
 #ifndef NDEBUG
 #define STACK_ALLOCATOR_DEBUG_FILL
 #endif // in Debug mode
 
-static constexpr std::byte DEBUG_FILL_BYTE = std::byte(0xCD); // Debug fill byte
+static constexpr std::byte DEBUG_FILL_BYTE = std::byte(0xCD); ///< Debug fill byte
 
+/// A simple stack allocator for fast LIFO memory allocation.
+/// You can only roll back to a previous marker or clear the entire stack.
 class StackAllocator
 {
 public:
-	// Stack marker: Represents the current top of the   
-	// stack. You can only roll back to a marker, not to  
-	// arbitrary locations within the stack.
-	using Marker = u32;
+    /// Marker type for current stack top.
+    using Marker = u32;
 
-	// Constructs a stack allocator with the given total   
-	// size.
-	explicit StackAllocator(u32 StackSizeBytes);
+    /// Constructs a stack allocator with a given size in bytes.
+    /// @param StackSizeBytes Total size of the stack in bytes.
+    explicit StackAllocator(u32 StackSizeBytes);
 
-	// Deletes the copy constructor and assignment operator
-	StackAllocator(const StackAllocator&) = delete;
-	StackAllocator& operator=(const StackAllocator&) = delete;
+    StackAllocator(const StackAllocator&) = delete; ///< Deleted copy constructor.
+    StackAllocator& operator=(const StackAllocator&) = delete; ///< Deleted copy assignment.
 
-	// Implements the move constructor and assignment operator
-	StackAllocator(StackAllocator&& other)noexcept;
-	StackAllocator& operator=(StackAllocator&& other)noexcept;
+    StackAllocator(StackAllocator&& other) noexcept; ///< Move constructor.
+    StackAllocator& operator=(StackAllocator&& other) noexcept; ///< Move assignment.
 
-	// Allocates a new block of the given size from stack  
-	// top.
-	void* Allocate(u32 SizeBytes, u32 Alignment = alignof(std::max_align_t));
+    /// Allocates a block of memory from the top of the stack.
+    /// @param SizeBytes Size of the allocation in bytes.
+    /// @param Alignment Alignment requirement.
+    /// @return Pointer to the allocated memory.
+    void* Allocate(u32 SizeBytes, u32 Alignment = alignof(std::max_align_t));
 
-	// Returns a marker to the current stack top
-	Marker GetMarker() const;
+    /// Returns a marker to the current stack top.
+    /// @return Current marker.
+    Marker GetMarker() const;
 
-	// Rolls the stack back to a previous marker
-	void FreeToMarker(Marker marker);
+    /// Rolls the stack back to a previous marker.
+    /// @param marker Marker to roll back to.
+    void FreeToMarker(Marker marker);
 
-	// Clears the entire stack (rolls the stack back to   
-	// zero).
-	void Clear();
-	// Frees the stack allocator and releases all memory
-	~StackAllocator();
+    /// Clears the entire stack. All allocations are invalidated.
+    void Clear();
 
-	// Scope for rewinding the stack allocator
-	class RewindScope
-	{
-	public:
-		// Constructs a rewind scope that will rewind the stack
-		explicit RewindScope(StackAllocator& allocator);
+    ~StackAllocator(); ///< Frees the stack memory.
 
-		// Rewinds the stack allocator to the marker at the time of construction
-		~RewindScope();
-	private:
-		// Reference to the stack allocator
-		StackAllocator& m_Allocator;
+    /// RAII scope for automatic rewind of the stack allocator.
+    /// Rolls back to the saved marker on destruction.
+    class RewindScope
+    {
+    public:
+        /// Constructs a rewind scope. Saves current marker.
+        explicit RewindScope(StackAllocator& allocator);
 
-		// Marker at the time of construction
-		Marker m_Marker;
-	};
+        /// Rewinds the stack to the saved marker.
+        ~RewindScope();
+    private:
+        StackAllocator& m_Allocator; ///< Reference to the stack allocator.
+        Marker m_Marker;             ///< Saved marker at construction time.
+    };
 private:
-	// Header for stack allocations, used to store padding
-	struct StackAllocationHeader
-	{
-		u8 padding;
-	};
+    /// Header for stack allocations, stores padding.
+    struct StackAllocationHeader
+    {
+        u8 padding;
+    };
 
-	// Calculates the padding needed for the given size and alignment
-	u32 CalculatePadding(u32 SizeBytes, u32 Alignment, uintptr_t& currentAddress);
+    /// Calculates the padding required for alignment.
+    /// @param SizeBytes Size of allocation.
+    /// @param Alignment Alignment requirement.
+    /// @param currentAddress Current address of stack top.
+    /// @return Number of padding bytes required.
+    u32 CalculatePadding(u32 SizeBytes, u32 Alignment, uintptr_t& currentAddress);
 private:
-	// Pointer to the base of the stack
-	std::byte* m_StackBase;
-	// Size of the stack in bytes
-	u32 m_StackSizeBytes;
-	// Current stack top
-	Marker m_CurrentMarker;
+    std::byte* m_StackBase; ///< Base pointer of the stack memory.
+    u32 m_StackSizeBytes;   ///< Total size of the stack in bytes.
+    Marker m_CurrentMarker; ///< Current top of the stack.
 };
+
+
+/// Allocates memory from a stack allocator and constructs objects if needed.
+/// @tparam T Type of object to allocate.
+/// @tparam Args Types of constructor arguments for non-trivial objects.
+/// @param size Number of objects to allocate.
+/// @param allocator Reference to the stack allocator.
+/// @param args Arguments forwarded to the constructor of T.
+/// @return Pointer to the first object of type T.
+/// @note Trivial types are returned as-is. Non-trivial types are constructed in-place.
+template <typename T, typename... Args>
+T* AllocateFromStack(size_t size, StackAllocator& allocator, Args&&... args)
+{
+    void* mem = allocator.Allocate(sizeof(T) * size, alignof(T));
+
+    if constexpr (std::is_trivial<T>::value)
+    {
+        return reinterpret_cast<T*>(mem);
+    }
+    else
+    {
+        T* array = reinterpret_cast<T*>(mem);
+        for (size_t i = 0; i < size; ++i)
+            new (&array[i]) T(std::forward<Args>(args)...);
+        return array;
+    }
+}
+
+/// Destroys non-trivial objects in-place.
+/// @tparam T Type of object.
+/// @param array Pointer to the array of objects to destroy.
+/// @param size Number of objects to destroy.
+/// @note Must be called for non-trivial types before rolling back or clearing the stack allocator to avoid leaks.
+template <typename T>
+void DestroyObjects(T* array, size_t size)
+{
+    if (!array) return;
+
+    if constexpr (!std::is_trivial<T>::value)
+    {
+        for (size_t i = 0; i < size; ++i)
+            array[i].~T();
+    }
+}
