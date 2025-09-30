@@ -50,7 +50,9 @@ a lot of sense to use a stack-like data structure for these kinds of memory
 allocations.
 - You can use this custom stack allocator implementation example in your projects,
 - It’s important to consider alignment when dealing with memory in C and C++.
-
+> **Note**  
+> This stack-like allocator is **not thread-safe**.  
+> Ensure that only one thread modifies its memory at a time to prevent unintended overwrites.
 
 For more information about memory allocation, see [Game Engine Architecture](https://www.gameenginebook.com/) by Jason Gregory.
 
