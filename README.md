@@ -63,7 +63,7 @@ This allocator is used in my engine for storing **temporary objects and data str
 
 ```cpp
 // Allocating 1KB of memory once
-auto _stackAllocator = eastl::make_unique<Core::Memory::StackAllocator>(1024);
+auto m_StackAllocator = eastl::make_unique<Core::Memory::StackAllocator>(1024);
 
 // ... Example usage ...
 
